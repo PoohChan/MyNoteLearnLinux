@@ -39,7 +39,7 @@
 1. 文件的权限
 
    * `ls -al` 展示文件夹下文件信息。从左到右分别是 权限、链接、拥有者、群组、文件大小、修改日期、文件名
-   ![fileInformation](./fileInformation.png)
+   ![fileInformation](./picture/fileInformation.png)
    * 权限项有十个字符，例如 `drwxr-xr-x`
       + 第一个字符表示"目录，文件或链接"
          - 为 \[d\] 时表示目录
@@ -123,7 +123,7 @@
         例如在/tmp就有该权限，所有人全权限。使用root创建一个文件，使用其他账号登入不能删除该文件
       + SUID/GUID/SBIT权限设置</br>
        SUID代表4，GUID代表2，SBIT代表1。使用数字设置权限时，把这个数字放在权限数字位置前面，有多个时累加。如将文件权限设置为'-rwsr-xr-x'时，这样更改权限 `chmod 4755 filename`。在设置7666时，会出现大写ST的情况如下
-       ![fileST](fileST.png)</br>
+       ![fileST](./picture/fileST.png)</br>
        赋权时也可以使用字母SUID是u+s，SGID为g+s，SBIT是o+t。如：
          ```
          chmod u=rwxs,go=x test
