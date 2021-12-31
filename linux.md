@@ -129,6 +129,43 @@
          chmod u=rwxs,go=x test
          chmod g+s,o+t test
          ```
+   * 查看文件类型使用 `file filename` 命令</br>
+      如 `file /usr/bin/passwd`查询结果
+      ```
+      /usr/bin/passwd: setuid ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux-aarch64.so.1, BuildID[sha1]=49f22547cc152082477e4f2b00eb08056cdb29d9, for GNU/Linux 3.7.0, stripped
+      ```
+      
+6. 文件内容浏览</br>
+      浏览文件，几个常用命令</br>
+      `cat` 从第一行开始显示</br>
+      `tac` 从最后一行开始显示，和cat反着</br>
+      `nl` 显示出来，顺便显示行号</br>
+      `more` 一行一行显示</br>
+      `less` **和more类似，但可以向上翻页** 比较重要的命令，man文档就是用的less命令</br>
+      `head` 只看头几行</br>
+      `tail` 只看尾巴几行</br>
+      `od` 以二进制方式读取文件内容</br>
+
+   * ` cat [-AbEnTv]` -n 可以打出行号
+   * `tail -f filename` 连续输出
+7. 修改文件时间或创建文件 `touch` </br>
+   linux中每个文件会记录多个时间。其中有几个重要的时间查看</br>
+      * modification time(mtime)。文件内容修改时记录。`ls -l filename`查看的时间就是该时间
+      * status time(ctime)。状态修改时更新该事件。如权限和属性。`ls -l --time=ctime filename`
+      * access time(atime)。文件被读取就会更新该事件。如被cat过。`ls -l --time=atime`
+
+   如果文件时间错乱了，比如系统时间错误导致创建的时间在未来等问题时。可以使用touch命令修正, ``touch [-acdmt] filename``。
+      * -a: 修改access time
+      * -c: 修改mtime和atime, 没有文件则创建文件
+      * -d: 后面可以接续自定的时间，而不是当前的时间，--date=
+      * -m: 仅修改mtime
+      * -t  ：后面可以接欲修订的时间而不用目前的时间，格式为\[YYYYMMDDhhmm\]
+8. 指令和文件的搜寻
+   [第六章最后一节]
+---
+# 四、Linux磁盘与文件系统
+   
+   
 
    
 
