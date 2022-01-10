@@ -109,12 +109,13 @@
          - SUID仅对二进制程序有效
          - 本权限仅限执行过程有效，且在期间获得root权限
       + set GID</BNR>
-       当s出现在群组的x位置上时成为set GID。如/usr/bin/locate，去执行/var/lib/mlocate/mlocate.db。要素类似
-         - SGID仅对二进制程序有效
+       当s出现在群组的x位置上时成为set GID。如/usr/bin/locate拥有的权限，去执行/var/lib/mlocate/mlocate.db。该命令和文件都是同一群组，命令的group权限的x位置上是s</br>
+       要素类似
+         - SGID对二进制程序有效
          - 程序执行者需要有程序的x权限
          - 执行过程中获得程序的群组--slocate--的权限
          
-         该权限也可以使用在文件夹上
+         该权限也可以使用在文件夹上。文件夹group的x变为s，文件夹下群组用户创建的文件的群组为该群组。没有该权限的话，创建的文件的群组将是自己
       + Sticky Bit</br>
        只针对文件夹有效，对文件无效。在other的x上是一t。作用如下
          - 使用者对文件夹拥有wx权限，即写入权限
@@ -161,7 +162,124 @@
       * -m: 仅修改mtime
       * -t  ：后面可以接欲修订的时间而不用目前的时间，格式为\[YYYYMMDDhhmm\]
 8. 指令和文件的搜寻
-   [第六章最后一节]
+   * `which` 搜寻命令。搜寻可执行文件, 参数-a查出所有而非第一个找到的。该命令根据PATH环境变量规范的路径查询可执行文件</br>
+    `which ls` 查看ls命令的位置</br>
+    `which which` 查看which命令的位置，结果有两条一个是别名</br>
+    `which history` 查看history命令没有结果，因为history是bash内置命令，不在PATH内。</br>
+    或者使用 `type` 命令
+   * 文件的搜寻。**一般不用find命令**速度慢费硬盘。
+      + `whereis [-bmsu]` 命令在特定的目录下搜寻
+         - `-l` 列出whereis回去查询的主要目录
+         - `-b` 只找寻二进制文件
+         - `-m` 只找寻在manual路径下的文件
+         - `-s` 只找寻source来源的文件
+         - `-u` 只找寻不在上述三个项目中的特殊文件
+
+         例如：`whereis ifconfig` 找寻ifconfig的位置。`whereis -m passwd`在手册中寻找passwd</br>
+         快的原因是没有全盘搜索，只在特定的目录下进行搜寻， 使用`whereis -l` 便可知搜寻范围
+      + `locate/updatedb`
+         - locate \[-ir\] keyword
+           - `-i` 忽略大小写的差异
+           - `-c` 不输出文件名，只计算找到文件的数量
+           - `-l` 控制结果输出几行
+           - `-S` 输出locate所使用的数据库文件相关信息，包括数据库记录的文件目录数量等
+           - `-r` 后面可以接正则表达式
+       
+           例如：`locate -l 6 passwd` 输出和passwd相关的5个文件名。第一次查询提示没有数据库，使用`updatedb`更新后再查询。</br>
+           `locate -S` 查询数据库文件记录信息。</br>
+           使用限制是文件名存储在/var/lib/mlocate数据库中的，没有记录的话及搜寻不到，数据库一般每天自动更新一次硬盘上的文件名。如果是新的文件名没有记录进去的话，使用`updatedb`命令进行更新，更新搜寻文件夹记录范围等使用的配置在/etc/updatedb.conf中记录。
+      + `find [path] [option] [action]` 
+        - 与时间有关的选项。有-atime, -ctime, -mtime。以-mtime说明：
+          - -mtime n: n天前的一天之内被更改过的文件
+          - -mtime +n: n天之前被更改过的文件
+          - -mtime -n: n天之内被更改过的文件
+          - -newer file: file作为一个存在的文件，列出比file更新的文件
+        
+          例如：`find / -mtime 0` 含义是24小时之内所有更新过的文件</br>
+          `find /etc -newer /etc/passwd` 含义是在/etc寻找比/etc/passwd更新的文件</br>
+          +n, -n, n 构成n天前，n天内，和n天那一天
+        - 与用户和群组相关的参数
+          - -uid n: n是使用者的uid
+          - -gid n: n是群组名称的id
+          - -user name: name是使用者的名称
+          - -group name: name是群组的名称
+          - -nouser: 寻找文件的用户不在/etc/passwd中的用户的文件
+          - -nogroup: 寻找群组不在/etc/group的群组的文件
+          
+          例如：`find /home -user dmtsai` 在/home下寻找用户是dmtsai的文件</br>
+          `find / -nousr` 在根目录下寻找没有没有在/etc/passwd中记录的用户的文件，一般使用源码编译时会有这种情况发生
+        - 与文件权限和名称相关的参数
+          - -name filename: 搜寻名称是filename的文件
+          - -size [+-]SIZE: 搜寻比SIZE大还是小的文件，SIZE规格c代表Byte，k代表1024Bytes。如搜寻比50k大的文件“-size +50k”
+          - -type TYPE    ：搜寻文件的类型为 TYPE 的，类型主要有：一般正规文件 （f）, 设备文件 （b, c）,
+                   目录 （d）, 链接文件 （l）, socket （s）, 及 FIFO （p） 等属性。
+          - -perm mode  ：搜寻文件权限“刚好等于” mode 的文件，这个 mode 为类似 chmod
+                 的属性值，举例来说， -rwsr-xr-x 的属性为 4755 ！
+          -  -perm -mode ：搜寻文件权限“必须要全部囊括 mode 的权限”的文件，举例来说，
+                 我们要搜寻 -rwxr--r-- ，亦即 0744 的文件，使用 -perm -0744，
+                 当一个文件的权限为 -rwsr-xr-x ，亦即 4755 时，也会被列出来，
+                 因为 -rwsr-xr-x 的属性已经囊括了 -rwxr--r-- 的属性了。
+          - -perm /mode ：搜寻文件权限“包含任一 mode 的权限”的文件，举例来说，我们搜寻
+                 -rwxr-xr-x ，亦即 -perm /755 时，但一个文件属性为 -rw-------
+                 也会被列出来，因为他有 -rw.... 的属性存在！
+
+            例如：`find / -name passwd` 在根目录下寻找passwd的文件</br>
+            `find / -size +1M` 找出系统中规格大于1M的文件</br>
+            `find / -name "*passwd*"` 用关键字方式在根目录下像passwd的文件</br>
+            `find /run -type s` 查找/run下类型是socket类型的文件</br>
+            `find / -perm /7000` 7000 就是 ---s--s--t
+
+            使用-perm就能找到一些特殊权限的文件，还可以把待搜索文件夹并列写出来。例如在/usr/bin, /usr/sbin下寻找有SUID, SGID权限的文件：</br>
+            `find /usr/bin /usr/sbin -perm /6000`
+         - 额外的可进行的操作
+           - -exec command: command为其他指令， -exec后可接续额外的指令处理搜寻到结果
+           - -print: 将结果打印出来，这个动作是默认动作
+           
+           例如：`find /usr/bin /usr/sbin -perm /7000 -exec ls -l {} \;` 该命令将上个例子中的文件信息具体打印出来，有几个特殊的地方“{}”, “\\;”，“-exec”.
+             -  {} 代表的是find找到的内容，在命令中前一半由find找到的内容放到{}中
+             -  从-exec 到 \;。代表额外动作从 `-exec` 开始到 `\;` 结束，即`ls -l {}` 注意 `ll` 命令是别名不能放到其中，其他很多场合也是这样
+             -  `\;` 因为 `;` 在bash环境下有特殊意义，因此使用反斜杠来跳脱
+
+   一般使用whereis和locate就够了，在这两个命令不能满足时再使用find命令。find命令比较费硬盘
+
+   建立新group, `groupadd project`</br>
+   建立新用户, `useradd -G project alex`</br>
+   `useradd -G project arod`</br>
+   创建文件夹`mkdir /srv/ahome`</br>
+   更改群组`chgrp project /srv/ahome`</br>
+   更改权限`chomd 770 /srv/ahome`</br>
+   `passwd alex XshCh&xHyi7pybCL`</br>
+   `passwd arod f%n1s483Ke&w#oEm`</br>
+   `su - alex` 切换的alex账户</br>
+   `cd /srv/ahome`</br>
+   `touch 1234` 创建文件</br>
+   `su - arod` 切换用户</br>
+   `cd /srv/ahome` </br>
+   `ls -l` 创建的1234文件不能编辑，文件的群组是alex，不是我们想要的效果</br>
+   `su` 切换到root，重新分配权限</br>
+   `chmod 2770 /srv/ahome` 将文件夹建立成共享状态，建立的文件的群组是创建者的群组
+
+## 四、磁盘与文件系统管理
+最传统的磁盘文件系统使用EXT2。复习磁盘分区。重点是inode, block和superblock
+1. 磁盘组成分区复习
+   * 磁盘由圆形盘片，机械臂，主轴马达。马达转动盘片，使得机械臂读取盘片上的数据
+   * 盘片组成
+     * 扇区。有512Bytes和4K两种规格
+     * 柱面。由扇区组成的圆环就是一个柱面
+     * 早期分区以柱面为最小单位，现在以扇区为最小单位
+     * 磁盘分区表两种格式，早期的MBR, 和GPT分区表
+     * MBR分区表中，第一个扇面最重要。分为主要开机区(Master boot record MBR)和分区表(partition table)，其中MBR占有446Bytes，partition占有64Bytes
+     * GPT分区数量扩充，支持容量超过2TB
+     * 磁盘命名方式：
+       + /dev/sd[a-p][1-128]：为实体磁盘的磁盘文件名
+       + /dev/vd[a-d][1-128]：为虚拟磁盘的磁盘文件名
+2. 文件系统特性
+
+
+
+
+
+
 ---
 # 四、Linux磁盘与文件系统
    
