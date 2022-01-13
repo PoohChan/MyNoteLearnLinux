@@ -275,6 +275,226 @@
        + /dev/vd[a-d][1-128]：为虚拟磁盘的磁盘文件名
 2. 文件系统特性
 
+   介绍文件系统和分区关系。传统上一个分区就是一个文件系统，采用同一种文件访问方式。现在使用LVM与软件磁盘阵列(software raid)技术可以将一个分区分为多个文件系统，也可以将多个分区合为一个文件系统。整体和文件信息分布在superblock, inode, datablock中
+   * superblock: 记录此filesystem的整体信息，包括inode/datablock的总量使用量剩余量，以及文件系统的格式和相关信息。
+   * inode: 记录文件属性。一个文件占用一个inode, 同时记录文件的数据所在block的号码
+   * block: 记录实际文件的内容。若文件太大时，会占用多个block
+   
+   每个inode和block都有编号。每个文件占用一个inode, inode中记录文件数据库放置的block号码。例如一个inode中记录多个block号码，读取时一次读出。这种文件系统成为索引式文件系统(indexed allocation)。U盘一般采用FAT格式文件系统，没有inode。多个区块存文件时，上一个区块存下一个区块的位置，类似于链表方式。如下图所示：</br>
+   ![indexed-allocation](./picture/indexed-allocation.png)
+   ![linked-allocation](./picture/linked-allocation.png)
+3. linux的EXT2文件系统(second extended filesystem)
+
+   当磁盘很大时，把block和inode分开存放不太明智。所以格式化时分为区块群组，每个区块群组都有独立的 inode/block/superblock 系统。文件系统由一个开机扇区开头再带上一堆区块群组，一个磁盘分为多个文件系统时就可以设置多重开机环境，一个文件系统一个开机扇区。每个区块组的六部分组成。以下内容没有明确指出的情况下都是EXT2环境中的信息
+
+      * data block
+         
+         data block是存放文件数据的地方。在EXT2文件系统中支持的block大小有1k, 2k, 4k三种。在格式化时block大小固定，每个block都有编号来存在inode中。block大小不同会决定文件系统最大值和单一文件最大值的不同。在EXT2下的对应值：
+
+         | block大小 | 1KB | 2KB | 4KB |
+         | :----: | :----: | :----: | :----: |
+         | 最大单一文件限制 | 16GB | 256GB | 2TB|
+         | 文件系统最大容量 | 2TB | 8TB | 16TB|
+
+         EXT2中的data block还有如下限制：
+
+           * block在格式化后不能改更大小
+           * 每个block最多能放一个文件的数据
+           * 如果文件大于block的大小，文件会占用多个block
+           * 若文件没有占满block的大小，block剩下的地方也不能被使用了
+           
+         如果block是4K，存储的文件都是2K，每存入一个文件就浪费一半空间。理论上情况是这样的。
+      * inode table
+ 
+         inode存储文件的属性以及位置等信息，至少包含如下：
+         
+         * 文件的存取模式(r/w/x)  
+         * 文件的拥有者和群组(owner/group)
+         * 文件的容量
+         * 文件创建或状态更改的时间(ctime)
+         * 文件最近一次读取的时间(atime)
+         * 文件最近一次修改的时间(mtime)
+         * 文件特性标识，如setUID等
+         * 文件内容真正的指向
+         
+         inode的数量和大小在格式化时也会固定下来，此外inode还有以下特点
+
+         * 每个inode大小是128Bytes（新的ext4和xfs可以设置到256Bytes）
+         * 每个文件仅仅占用一个inode
+         * 文件系统能够创建的文件数量和inode数量有关
+         * 系统读取文件时先找到inode, inode记录的权限和使用者相符才可以读取block中的值
+         
+         inode和data block的关系。inode有128Bytes, 记录一个block需要4Bytes（4Bytes有42亿多的不同组合）。如果一个文件400MB每个block4K，如果直接记录所有区块信息需要记录1万个block地址。inode记录block定义为12个直接、一个间接、一个双间接，一个三间接。使用1K的block进行说明。如图inode内连接block方式:
+
+         ![inode-block](./picture/structureOfInode.png)
+
+         * 12个直接指向。每个记录一个block地址，所以最多记录12K内容
+         * 一个间接指向。伸出**一个分支指针**。指向一个block，该block内全部存block的地址，1K大小4Bytes一个地址，故能指向256个数据block。间接指向最多256K。
+         * 一个双间接指向。伸出**2层分支指针**。先像间接指向一样指向一个block，该block内存下一层指针的地址。第二层256个block全部存指针。最终最多指向256\*256个数据block。
+         * 一个三间接指向。伸出**3层分支指针**。和双间接类似，在第三层指向数据block全部换成指针，即256\*256个指针block。最终在第四层指向256\*256\*256个数据block。
+         * 所以在1K大小block的情况下，第一层12K数据（和3*256个指针），第二层256K数据（2\*256\*256个指针），第三层256\*256K数据（256\*256\*256个指针），第四层256\*256\*256K数据。加起来
+            
+               12 + 256 + 256*256 + 256*256*256(K) = 16,843,020 K ≈ 16 G
+
+         查看上面的表格是符合的。但是不能用于2K和4K大小的block的计算，大于等于2K的block会受EXT2文件系统的限制。在EXT4中inode是256Bytes，可以记录新的额外信息。单个文件上限达到16TB，文件系统上限达到1EB。
+      * superblock（超级区块） 
+         
+         superblock是记录整个filesystem相关信息的区域。没有superblock就没有filesystem了。superblock记录的信息主要有：
+         
+         * block和inode的总量
+         * 未使用和已使用inode/block的数量
+         * block和inode的大小（block为1/2/4K，inode为128/256Bytes）
+         * filesystem的挂载时间、最近一次写入数据的时间、最近一次检验磁盘(fsck)的时间等文件系统相关的信息
+         * 一个valid bit的数值，若文件系统已被挂载为0，未被挂载为1
+         
+         superblock非常重要。它死了文件系统也就坏了。一般是1024Bytes大小。之后可以使用 `dumpe2fs` 命令查看。一般来说应该只有一个superblock才对。第一个groupblock一定会有superblock，之后的groupblock有的话则是第一个superblock的备份。
+      * Filesystem Description（文件系统描述说明）
+         
+         这个区段可以描述每个 block group 的开始与结束的 block 号码，以及说明每个区段 （superblock, bitmap, inodemap, data block） 分别介于哪一个 block 号码之间。这部份也能够用 dumpe2fs 来观察的。
+      * block bitmap
+      
+         记录哪些是空的block哪些是被使用的block。记录文件插入和删除时block标志的变换。
+      * inode bitmap
+      
+         和block bitmap类似，记录的是inode的使用情况
+      * dumpe2fs: 查询Ext家族superblock信息的命令
+
+         如果使用的是xfs文件系统，怎不能使用dumpe2fs命令。之后格式化出一个文件系统用于测试。</br>
+         使用 `df -hT` 和 `blkid` 结合的看文件系统信息。</br>
+         执行命令 `dumpe2fs /dev/vda1` 查看所有区块信息，
+        
+         * -h ：仅列出 superblock 的数据，不会列出其他的区段内容
+         * -b ：列出保留为坏轨的部分
+         
+         展示的结果有些多，上述提到到信息都可以看到。可以看下group block 0 的信息：
+
+         ![group block 0](./picture/groupBlock0.png)
+         
+         * 占用block号码从0到32767，superblock在0号block中，descriptors在1到10号block。
+         * Block bitmap在1025上，Inode bitmap在1041上。
+         * Inode table在1057到1568之间的区块上
+         * 共有1568 - 1057 + 1 = 512 个区块用于记录Inode。由命令的结果信息可知一个区块4K，一个Inode512Bytes，所以一共 512 * 4096 / 256 = 8192 个Inode。这个信息在结果中也能看到
+         * 可用block 21149，可用inode2097个，以及这些可用block的号码
+4. 文件系统与目录树的关系
+   * 目录
+   
+      创建目录时系统会分配一个inode和至少一个block给该目录。inode记录目录的权限和属性，和分配到的block的号码。分配的block记录目录下的文件名和文件占用的inode的信息。展示出目录的大小指的是目录指向block的大小，一般都是4096的倍数，因为一个block就是4KBytes。
+   * 目录树读取
+     
+     目录内的文件名和地址是在目录inode的block中存储。目录树从根目录读起，系统通过挂载信息找到挂载点的inode号码，然后找到根目录block中文件名一层一层读取。例如要读取/etc/passwd的过程：
+     ![directory tree](./picture/directoryTree.png)
+     * /的node：通过挂载点的信息找到inode号码为2的根目录的inode，且inode记录的权限（rx）可以读取/记录block的内容
+     * /的block：通过/的block，得知里面存入/etc目录的inode号码262147。
+     * /etc的inode: 读取262147号inode得知有读的权限，读取/etc的block
+     * /etc的block: 读取/etc/passwd的inode的号码270485
+     * passwd的inode: 读取270485得知用户有r权限，可以读取block中的内容
+     * passwd的block: 将该block的内容读取出来
+     
+     filesystem大小和磁盘读取性能有关。如果频繁读写，文件一般不能写在连续的block中。如果文件过于离线时，磁头需要频繁移动去读取文件。可以将整个文件系统拷贝出来，再复制回去时文件就是连续的状态了。如果文件系统过于大，假设一个文件的block分布在最前面和最后面的话，读取时磁盘机械臂移动幅度大，也会导致读取效率低下。所以不是分区不是分的越大越好。
+5. EXT2/EXT3/EXT4文件存取与日志式文件系统的功能
+   
+   如果要新增文件时系统是怎么处理的呢
+     1. 先确定使用者对目录是否有wx的权限
+     2. 根据inode bitmap找到没有使用的inode号码，并根据新文件的权限属性写入
+     3. 根据block bitmap找到没有使用的block号码，并将实际的文件写入block，更新inode block指向数据
+     4. 将刚写入的inode和block数据同步更新inode bitmap和block bitmap，更新superblock内容
+      
+   一般将inode table和data block成为数据区域。其他superblock/block bitmap/inode bitmap称为metadata(中介数据)。每次变更和读取都可能会导致中介数据的变更。
+
+   * 数据不一致的状态
+
+   如果在写入inode和block后系统发生故障，没有更新metadata。这时就发生了中介数据和实际数据不一致的情况。
+   
+   不一致时系统会在重新开机时，由superblock中的valid bit（是否挂载）和filesystem state（clean与否）等状态来判断是否强制进行数据一致性的检查。若需要检查时使用`e2fsck`命令进行检查。
+
+    但是检查是十分费时。检查时针对metadata和实际数据存放区进行对比。如果文件系统十分大而且对提供网络服务的服务器来说修复时间十分长。
+
+   * 日志式文件系统(journaling filesystem)
+
+   为了避免上述数据不一致的情况发生，有人想出一种办法。在文件系统中划出一块区域专门记录文件变更的步骤。这样可以简化一致性检查的步骤。过程：
+      1. 预备：当要写入一个文件时，现在日志记录区中记录某个文件准备写入的信息。
+      2. 实际写入：开始写入文件的权限和数据，开始更新metadata的数据
+      3. 结束：在完成数据和metadata的更新后，在日志记录区完成该文件的记录
+      
+   万一数据变更过程中发生问题，系统只要检查日志记录区即可，就能知道那个文件发生了问题，而不必针对真个系统进行一致性检查。达到快速修复文件系统的目的，这就是日志式文件系统的基础的功能。
+
+   /EXT4就具备这个这样的功能。在 `dumpe2fs -h /dev/vda1 `命令的结果中，superblock的信息中有包含有日志区别的信息。
+6. Linux文件系统的运行
+
+   文件要读到CPU中才可以处理。如果有一个十分大的文件要编辑，又要频繁地要系统写入磁盘。磁盘写入比内存慢很多，这样的话就把时间耗在等待磁盘IO上了，没有效率。
+
+   为了解决这个问题，Linux使用非同步处理(asynchronously)的方式。原理是这样的。文件载入到内容中，没有变更过的话，被设置为一个clean的标识。如果发生变更，clean标识变为dirty。此时都发生在内存中没有写入到磁盘中。系统会不定时地把标记为dirty的数据写入到磁盘中，来保持数据一致性。也可以使用之前提到的`sync`命令手动强制写入磁盘。把经常使用的文件放到内存中会提升性能。所以Linux的文件系统和内存间的调度关系紧密：
+      * 系统会将常用的文件放到缓存区，加快读写。   
+      * Linux内存会被使用耗尽，这是正常的保证系统性能
+      * 正常关机时，系统会调用`sync`把内存标识为dirty的数据写入磁盘。也可以手动调用写入
+      * 如果不是正常关机（如突然断电、死机或其他原因），由于数据没有正常写入磁盘，开机后可能会花很多时间进行磁盘检查，甚至可能导致文件系统的损毁（非磁盘的损毁）
+7. 挂载点的意义
+   
+   每个文件系统都有独立的inode/block/superblock等信息。将文件系统链接到目录树上才能被使用。将文件系统和目录树挂钩的过程称为**挂载**。挂载点必须是目录，该目录变为该文件系统的入口。文件系统只有挂载后才能被使用。
+
+   使用`ls -ild [dir] [dir1]`观察目录的inode信息
+8. 其他Linux支持的文件系统和VFS
+
+   Linux标准文件系统是EXT2，和增加了日志功能的EXT3/EXT4。Linux支持常见的文件系统
+      * 传统文件系统：EXT2/minix/MS-DOS/FAT(用vfat模块)/iso9660(光盘)等等
+      * 日志式文件系统：ext3/ext4/ReiserFS/Windows'NTFS/IBM's JFS/SGI's XFS/ZFS
+      * 网络文件系统：NFS/SMBFS
+   
+   使用命令查看自己的Linux支持什么文件系统：`ls -l /lib/modules/$(uname -r)/kernel/fs`
+   ![supported fs](./picture/supportedFs.png)
+
+   查看目前载入到系统的文件系统：`cat /proc/filesystems`
+
+   * Linux VFS(Virtual Filesystem Switch)
+
+   Linux如何管理这些认识的文件系统。VFS的核心功能就是读取文件系统。Linux所认识的文件系统都由VFS管理。使用者不必关系每个分区上是什么文件系统，VFS会主动帮我做好读取工作。
+
+   假设/使用的是设备/dev/hda1，类型是ext3；/home使用的设备是/dev/hda2，类型是reiserfs。取用/home/dmtsai/.bashrc不需要指定文件系统，背后由VFS帮助管理。VFS在文件系统上层做管理。
+   ![vfs-interface](./picture/vfs-interface.png)
+9. XFS文件系统简介
+
+   CentOS 7 开始默认文件系统由EXT4变成XFS文件系统，EXT存在着一些劣势。
+
+   * XFS文件系统的配置 
+   
+   xfs是一个日志式文件系统。最初xfs被开发用于大容量磁盘和高性能文件系统使用。拥有几乎所有EXT4的功能。xfs在数据分布上主要规划为3个部分。数据区(data section)，文件系统活动登录区(log section)，实时运行区(realtime section)。
+
+   * 数据区
+
+   数据区和ext家族的一样，包括 inode/data block/superblock 等数据，都放置在这个区块。和group block类似，分为多个存储群组(allocation groups)。每个群组包含（1）整个文件系统的superblock，（2）剩余空间管理机制，（3）inode的分配和追踪。inode和block都是系统需要时才动态配置产生，所以格式化动作快。
+
+   与ext家族不同的是，xfs的block和inode有不同的容量可供设置。block由512Bytes到64K调配，不过由于Linux的内容控制的原因，block最高还是4K。inode256Bytes到2M，256Bytes是够用的。
+
+   * 文件系统活动登录区
+   
+   主要用来记录文件系统的变化，类似日志区。文件变化在此处记录，直到文件完整写入数据库，该笔记录才算完成。文件系统发生损毁时，系统会到这里进行校验，来确认损毁前发生了什么，用以快速恢复文件系统。
+
+   系统所有动作都会记录到该区域，所以该区域磁盘活动十分频繁。xfs设计可以指定外部磁盘来记录xfs日志活动。所以可以找一块SSD作为日志记录区，可以更快。
+
+   * 实时运行区
+  
+   当文件要被创建时，xfs会在这个区域找一块或多个extent区块，将文件放到区块内。到分配完毕后，在将文件写入到data section。extent区块的大小要在格式化时就指定大小，范围从4K到1G。一般非磁盘阵列默认64K，具有类似磁盘阵列的stripe的情况下，建议将extent设置和stripe一样大。extent大小不要乱动，会影响到磁盘的性能。
+
+   * xfs的描述数据观察
+   
+   xfs也有类似ext家族的`dumpe2fs`的命令，xfs_info命令。</br>
+   ![xfs_info](./picture/xfs_info.png)</br>
+   使用 `df -hT` 找到磁盘挂载情况。</br>
+   再使用 `xfs_info /dev/mapper/centos-root` 命令。参数是挂载设备。输出结果包含信息：
+      * meta-data第1行的isize就是inode的大小512Bytes。agacount是存储群组(allocation group)的数量4个。agsize每个存储群组中包含3276800（3200 * 1024）个block。结合第四行每个block4K，一个存储群组就是12.5G。4个存储群组就是50G，和第一个命令中的结果一样
+      * meta-data第2行中sectsz是逻辑扇区512Bytes大小的意思
+      * data行每个block4K大小，一共有13107200个区块在文件系统中，就是3276800*4这么多。（不是动态分配吗，为什么提前就有这么多了？）
+      * data第2行中的sunit和swidth和磁盘阵列相关性较高。会在格式化中介绍
+      * log行中的internal指的是文件登录区在文件系统内，不在外部。占用2560*4K一共10M的容量。
+      * realtime行中的extent大小(extsz)为4K，没有被使用
+   
+   没有使用磁盘阵列，所以sunit和swidth是0。根据xfs(5)中的说明(`man 5 xfs`)，这两个值会影响到文件系统的性能，格式化时需要留意。
+
+
+
+
+
+
 
 
 
