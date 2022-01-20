@@ -498,46 +498,298 @@
     
     * df命令
     
-    `df [-ahikHTm] [目录或文件名]`
-      * -a  ：列出所有的文件系统，包括系统特有的 /proc 等文件系统；
-      * -k  ：以 KBytes 的容量显示各文件系统；
-      * -m  ：以 MBytes 的容量显示各文件系统；
-      * -h  ：以人们较易阅读的 GBytes, MBytes, KBytes 等格式自行显示；
-      * -H  ：以 M=1000K 取代 M=1024K 的进位方式；
-      * -T  ：连同该 partition 的 filesystem 名称 （例如 xfs） 也列出；
-      * -i  ：不用磁盘容量，而以 inode 的数量来显示
-      举例执行 `df -hT` 结果如下：
+        `df [-ahikHTm] [目录或文件名]`</br>
+        * -a  ：列出所有的文件系统，包括系统特有的 /proc 等文件系统；
+        * -k  ：以 KBytes 的容量显示各文件系统；
+        * -m  ：以 MBytes 的容量显示各文件系统；
+        * -h  ：以人们较易阅读的 GBytes, MBytes, KBytes 等格式自行显示；
+        * -H  ：以 M=1000K 取代 M=1024K 的进位方式；
+        * -T  ：连同该 partition 的 filesystem 名称 （例如 xfs） 也列出；
+        * -i  ：不用磁盘容量，而以 inode 的数量来显示
+      
+        举例执行 `df -hT` 结果如下：
 
       ![](./picture/filesystemCapacity.png)
 
-      * Filesystem： 文件系统的设备
-      * Type：文件系统类型
-      * Size：容量-h显示为易读容量
-      * Used：使用容量
-      * Avail：可用容量
-      * Use%：已用百分比
-      * Mounted On：挂载目录
+        * Filesystem： 文件系统的设备
+        * Type：文件系统类型
+        * Size：容量-h显示为易读容量
+        * Used：使用容量
+        * Avail：可用容量
+        * Use%：已用百分比
+        * Mounted On：挂载目录
     
-    /dev/shm是使用内存虚拟出来的磁盘空间。通常会占用内存的一般容量，如果创建什么东西下次开机就会消失，因为是内存嘛。
+         /dev/shm是使用内存虚拟出来的磁盘空间。通常会占用内存的一般容量，如果创建什么东西下次开机就会消失，因为是内存嘛。
 
     * du 命令
    
-    `du [-ahskm] 文件或目录名称`
+        `du [-ahskm] 文件或目录名称`
 
-    * -a  ：列出所有的文件与目录容量，因为默认仅统计目录下面的目录容量包括当前目录的总容量
-    * -h  ：以人们较易读的容量格式 （G/M） 显示；
-    * -s  ：列出当前目录总量
-    * -S  ：不包括子目录下的总计，当前目录下其他文件的加和。总容量刨去所有子目录的容量总和
-    * -k  ：以 KBytes 列出容量显示；
-    * -m  ：以 MBytes 列出容量显示；
+        + -a  ：列出所有的文件与目录容量，因为默认仅统计目录下面的目录容量包括当前目录的总容量
+        + -h  ：以人们较易读的容量格式 （G/M） 显示；
+        + -s  ：列出当前目录总量
+        + -S  ：不包括子目录下的总计，当前目录下其他文件的加和。总容量刨去所有子目录的容量总和
+        + -k  ：以 KBytes 列出容量显示；
+        + -m  ：以 MBytes 列出容量显示；
     
     * 实体符号和链接符号：ln
     
-    Linux中有两种链接方式。一种类似于windows总的快捷方式一样，链接到目标文件或目录，称为软链接；另一种方式通过inode链接产生新文件名，这种方式成为硬链接(hard link)。
+         Linux中有两种链接方式。一种类似于windows总的快捷方式一样，链接到目标文件或目录，称为软链接；另一种方式通过inode链接产生新文件名，这种方式成为硬链接(hard link)。
 
-    * Hard Link（实体链接，硬链接或实际链接）
+        * Hard Link（实体链接，硬链接或实际链接）
     
-    每个文件都会占用一个inode，文件内容由inode的记录指向；想要读取该文件，必须经过目录里记录的文件名指向正确的inode号码。实际上文件名是只和目录相关的。
+         每个文件都会占用一个inode，文件内容由inode的记录指向；想要读取该文件，必须经过目录里记录的文件名指向正确的inode号码。实际上文件名是只和目录相关的。所以会有多个文件名对应同一个inode号码的情况。这就是hard link的由来。hard link就是在某个目录下新增一个文件名链接到某个inode上的记录。
+
+         举例来说，/root/crontab2是/etc/crontab的hard link。它两链接到同一个inode上。
+         ```
+         ll -i /etc/crontab
+         ln /etc/crontab /root/crontab2
+         ll -i /etc/crontab /root/crontab2
+         ```
+         ![hard Link](./picture/hardLink.png)</br>
+         如图可以发现inode号码一样。权限属性一样。链接字段变成了2，一个inode有两个文件名。在有链接存在的情况下比较安全，删除一个文件名，inode不会被删掉另一个文件名还会指向他。有点类似前端中的访问链，只要有能访问到inode的文件名，就不会被删除掉。不管通过那个文件名编辑内容，影响的都是同一个block。一般增加链接不会消耗额外的block，只是目录下的block添加了一个文件名和inode的记录。如果恰好目录下的记录文件名的block满了，又新起了一个block的话，也算是导致磁盘空间变化。这种影响是相当轻微的，就是新增一笔记录的影响。
+
+         hard link有限制。不能跨文件系统链接，只能在同一个文件系统上。inode号码毕竟是同一个文件系统上才能找到。不能链接目录。
+    * symbolic link（符号链接，快捷方式，软链接）
+
+         相对于hard link，symbolic link是创建了一个新的文件。该文件数据的读取直接指向link到的文件名。源文件删除后，打开软链接会提示无法打开某文件，因为找不到原始文件名。如下图所示，两个文件的Inodeshi不同的。链接文件的大小是8Bytes，因为是存储的的是文件名是8个字母。打开文件的过程先找到存储的文件名，然后打开那个文件。和windows下的快捷方式是等同的。删掉链接不影响源文件，删掉源文件，链接就无法使用了。因为是新建了一个文件所以会占用inode和block。</br>
+         ![softLink](./picture/softLink.png)</br>
+
+         要制作链接就要使用 `ln [-sf] sourcefile targetfile` 命令。
+         ```
+         参数：
+         -s: symbolic link。没有加参数就是hard link
+         -f: 如果目标文件存在，删除目标文件再创建。
+
+         举例一：复制/etc/passwd到/tmp下，观察inode和block
+         cd /tmp
+         cp -a /etc/passwd .
+         du -sb; df -i
+         21223147        .
+         Filesystem      Inodes IUsed   IFree IUse% Mounted on
+         /dev/vda1      5242880 69958 5172922    2% /
+
+         # 检查tmp下一共有多少Bytes，和整个文件系统有多少Bytes
+
+         举例二：将/tmp/passwd制作成hard link成为passwd-hd文件，观察文件和容量
+         ln passwd passwd-hd
+         du -sh; df -i .
+         21223147        .
+         Filesystem      Inodes IUsed   IFree IUse% Mounted on
+         /dev/vda1      5242880 69958 5172922    2% /
+
+         # 看到在/tmp下多了一个文件名，但是tmp和整个文件系统的大侠没有变化
+
+         举例三：将/tmp/passwd创建为一个symbolic link
+         ln -s passwd passwd-so
+         ls -li passwd*
+         671 -rw-r--r-- 2 root root 1682 Jan 10 17:07 passwd
+         671 -rw-r--r-- 2 root root 1682 Jan 10 17:07 passwd-hd
+         660 lrwxrwxrwx 1 root root    6 Jan 17 14:46 passwd-so -> passwd
+
+         # passwd-so是一个新的文件，指向源文件名。因为存储的是源文件的名称6个字母所以大小是6Bytes。
+         du -sh; df -i .
+         21223153        .
+         Filesystem      Inodes IUsed   IFree IUse% Mounted on
+         /dev/vda1      5242880 69959 5172921    2% /
+
+         # 文件系统容量增加6Bytes，使用inode增加一剩余inode减少一。
+
+         举例四：删除tmp下的passwd，其他两个文件是否能打开
+         rm -f passwd
+         cat passwd-hd
+         cat passwd-so
+         cat: passwd-so: No such file or directory
+
+         # passwd-hd显示正常。passwd-so显示无法打开
+
+         ll passwd*
+
+         # 显示软链接开始红闪，标识它已经不正常了
+         ```
+         
+         * 关于目录的link数量。
+
+         对文件增加hard link是链接数会增加1。创建目录时发生的情况。创建一个空目录时里面有什么内容，使用 `ls -a` 查看有两个内容一个点和两个点。自己本身链接是1，一个点增加一个链接，所以创建文件夹本身的链接数是2。两个点代表上一级目录，所以上一级目录也会增加1。可以创建一个空目录进行观察。
+
+11. 磁盘的分区、格式化、校验和挂载
+   
+    如果增加一块硬盘，需要几个步骤
+       1. 磁盘分区，以创建可用的partition
+       2. 对该分区格式化，以创建可用的文件系统
+       3. 谨慎些，可以对刚创建的文件系统进行校验
+       4. 创建挂载点，把分区挂载上来
+    
+    在此过程中有很多需要考虑的地方。如分区大小，是否加入日志，inode和block数量等。
+    
+    * 观察磁盘分区
+
+    磁盘分区有MBR和GPT两种格式。两个格式的分区工具不一样，之后会介绍的parted工具两种都支持。一般习惯用fdisk或gdisk来处理分区。那么先找出系统上有哪些磁盘。
+
+    * `lsblk` 列出系统上所有的磁盘
+   
+    lsblk可以看作是"list block disk"的缩写。列出所有存储设备
+
+    ```
+    lsblk [-dfimpt] [device]
+    -d: 仅列出磁盘本身，不列出磁盘分区信息 
+    -f: 同时列出磁盘内文件系统名称
+    -i: 使用ASCII码输出，不使用复杂编码（在某些环境下有大用）
+    -m: 同时输出该设备在/dev下的权限数据(rwx)
+    -p: 列出设备的完整名称，而不是仅仅列出最后的名字
+    -t: 列出磁盘的详细信息，包括磁盘贮列机制，预读写大小等
+
+    举例一：列出本系统下所有磁盘和磁盘分区信息
+    lsblk
+    NAME            MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
+    sda               8:0    0 446.1G  0 disk                        # 一整颗磁盘
+    ├─sda1            8:1    0   600M  0 part /boot/efi
+    ├─sda2            8:2    0     1G  0 part /boot
+    └─sda3            8:3    0 444.5G  0 part                        # 在sda3内的文件系统
+      ├─klas-root   252:0    0 390.5G  0 lvm  /
+      ├─klas-swap   252:1    0     4G  0 lvm  [SWAP]
+      └─klas-backup 252:2    0    50G  0 lvm  
+
+    ```
+
+    根据输出的信息，有一个sda磁盘设备。sda下分三个分区，其中sda3由lvm产生的文件系统。其他信息：</br>
+    + NAME 就是设备名，一般会省略/dev等前导目录
+    + MAJ:MIN 核心认识的设备都是通过这两个代码熟悉的！分别是 主要：次要设备代码
+    + RM 是否为可卸载设备，如光盘，USB磁盘等
+    + SIZE 容量大小
+    + RO 为否为只读设备
+    + TYPE 是磁盘(disk)/分区(partition)/只读存储器(rom) 等输出
+    + MOUNTPOINT 挂载点
+
+    ```
+    举例二：仅列出/dev/sda设备内所有数据的完整文件名
+     lsblk -ip /dev/sda
+     NAME                        MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
+     /dev/sda                      8:0    0 446.1G  0 disk 
+     |-/dev/sda1                   8:1    0   600M  0 part /boot/efi
+     |-/dev/sda2                   8:2    0     1G  0 part /boot
+     `-/dev/sda3                   8:3    0 444.5G  0 part 
+        |-/dev/mapper/klas-root   252:0    0 390.5G  0 lvm  /
+        |-/dev/mapper/klas-swap   252:1    0     4G  0 lvm  [SWAP]
+        `-/dev/mapper/klas-backup 252:2    0    50G  0 lvm  
+    ```
+
+    * blkid 列出设备的UUID参数
+
+    `lsblk -f` 也会列出设备的UUID，blkid也有这样的效果。UUID是Linux给所有设备赋予的全局唯一识别码(universally unique identifier)，这个识别码会被作为挂载或者是设备/文件系统只用。
+    ```
+    /dev/sda1: UUID="0DF5" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="1de6-4708-a797"
+    /dev/sda2: UUID="221c-41ca-8482" BLOCK_SIZE="4096" TYPE="xfs" PARTUUID="c664c555-81bb-4598-8aec"
+    /dev/sda3: UUID="OORk-7mzG-MTnl-eNOm" TYPE="LVM2_member" PARTUUID="a64407a3-cdb0-4246"
+    /dev/mapper/klas-root: UUID="9a6b-448b-852f" BLOCK_SIZE="4096" TYPE="xfs"
+    /dev/mapper/klas-swap: UUID="1498-4ad7-9741" TYPE="swap"
+    /dev/mapper/klas-backup: LABEL="KYLIN-BACKUP" UUID="9696-44dc-9662" BLOCK_SIZE="4096" TYPE="xfs"
+    ```
+
+    每一行代表一个文件系统，列出主要设备名和UUID，以及文件系统的类型。
+
+    * `parted` 列出磁盘的分区表类型和分区信息
+
+    已经知道系统上所有的设备，通过`blkid`知道所有的文件系统。还不清楚分区信息，可以通过简单地利用parted输出，完全用法后面介绍。
+
+    ```
+    parted device-name print
+    举例一：列出/dev/sda相关信息
+    parted /dev/sda print
+    Model: AVAGO HW-SAS3508 (scsi)                               # 磁盘的模块名称
+    Disk /dev/sda: 479GB                                         # 磁盘的总容量
+    Sector size (logical/physical): 512B/4096B                   # 磁盘的每个逻辑扇区/物理扇区的容量
+    Partition Table: gpt                                         # 分区表格式
+    Disk Flags:                                                  # 下面是分区数据
+ 
+    Number  Start   End     Size    File system  Name                  Flags
+     1      1049kB  630MB   629MB   fat32        EFI System Partition  boot, esp
+     2      630MB   1704MB  1074MB  xfs
+     3      1704MB  479GB   477GB                                      lvm
+
+
+    ```
+    * 磁盘分区 `gdisk/fdisk`
+
+    MBR分区使用`fdisk`命令，GPT使用`gdisk`命令分区。不要搞混，两个工具的操作比较类似。
+
+    * `gdisk`
+
+    ```
+    gdisk 设备名
+    举例一： 由之前得知，系统内有/dev/sda，观察该磁盘分区和相关数据
+    gdisk /dev/sda
+    GPT fdisk (gdisk) version 1.0.5
+
+    Partition table scan:
+    MBR: protective 
+    BSD: not present
+    APM: not present
+    GPT: present
+
+    Found valid GPT with protective MBR; using GPT.
+
+    Command (? for help): ?                                           # 按下问号查看指令
+    b	back up GPT data to a file
+    c	change a partition's name
+    d	delete a partition                                              # 删除一个分区
+    i	show detailed information on a partition
+    l	list known partition types
+    n	add a new partition                                             # 增加一个分区
+    o	create a new empty GUID partition table (GPT)
+    p	print the partition table                                       # 显示分区
+    q	quit without saving changes                                     # 不做改动离开
+    r	recovery and transformation options (experts only)
+    s	sort partitions
+    t	change a partition's type code
+    v	verify disk
+    w	write table to disk and exit                                    # 存储分区操作后离开
+    x	extra functionality (experts only)
+    ?	print this menu
+
+    Command (? for help): 
+
+    ```
+    应该使用 `lsblk` 和 `blkid` 找出磁盘。再用`parted /dev/sda print` 找出内部分区表。然后再gdisk/fdisk来操作系统。这个软件一般用在GPT比较好。不需要记住什么，按照问号提示操作即可。可以任意操作只要按下q随时不做保存离开。观察下分区信息，按下p
+
+    ```
+    Disk /dev/sda: 935544832 sectors, 446.1 GiB                       # 磁盘扇区数量和总容量
+    Model: HW-SAS3508                                                 
+    Sector size (logical/physical): 512/4096 bytes                    # 单一扇区容量
+    Disk identifier (GUID): AED6-46CB-B017                            # 磁盘的GPT识别码
+    Partition table holds up to 128 entries
+    Main partition table begins at sector 2 and ends at sector 33
+    First usable sector is 34, last usable sector is 935544798
+    Partitions will be aligned on 2048-sector boundaries
+    Total free space is 4029 sectors (2.0 MiB)
+
+    Number  Start (sector)    End (sector)  Size       Code  Name     # 完整分区信息
+       1            2048         1230847   600.0 MiB   EF00  EFI System Partition      #第一个分区信息
+       2         1230848         3327999   1024.0 MiB  8300  
+       3         3328000       935542783   444.5 GiB   8E00  
+
+    ```
+
+    信息的上半部分列出整体磁盘信息。这个盘446.1GiB，一共那么多扇区，一个扇区512Bytes。分区最小单位是扇区。
+
+    下半部分的分区信息表列出每个分区的个别信息。每个项的含义：
+      + Number：分区编号，1号指的是/dev/sda1
+      + Start(sector)：每个分区的开始扇区号码
+      + End(sector)：每个分区的结束扇区号码，可以和开始扇区号码做差计算容量
+      + Size：容量（例如分区1中(1230847-2048 + 1) / 1024 / 1024 = 600.00）
+      + Code：在分区内可能的文件系统类型。Linux为8300，swap为8200。该项目只是一个提示，不一定真代表此分区的文件系统
+      + Name：文件系统的名称
+   
+    发现几个信息，分区都是紧挨着，上一分区结束的扇区的下一个扇区就是下个分区的开始了。扇区没有使用完，还能分区，不过就剩下2MB了。`gdisk`命令只能由root执行。而且命令是针对的磁盘不是分区，所以对/dev/sda1执行就会出错。不要把MBR和GPT的命令搞混。
+
+    * 用`gdisk` 增加分区
+
+
+      
+
+
+      
+        
 
 
 
