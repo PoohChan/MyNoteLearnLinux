@@ -612,7 +612,7 @@
 
          对文件增加hard link是链接数会增加1。创建目录时发生的情况。创建一个空目录时里面有什么内容，使用 `ls -a` 查看有两个内容一个点和两个点。自己本身链接是1，一个点增加一个链接，所以创建文件夹本身的链接数是2。两个点代表上一级目录，所以上一级目录也会增加1。可以创建一个空目录进行观察。
 
-11. 磁盘的分区、格式化、校验和挂载
+11. 磁盘的分区
    
     如果增加一块硬盘，需要几个步骤
        1. 磁盘分区，以创建可用的partition
@@ -783,6 +783,251 @@
     发现几个信息，分区都是紧挨着，上一分区结束的扇区的下一个扇区就是下个分区的开始了。扇区没有使用完，还能分区，不过就剩下2MB了。`gdisk`命令只能由root执行。而且命令是针对的磁盘不是分区，所以对/dev/sda1执行就会出错。不要把MBR和GPT的命令搞混。
 
     * 用`gdisk` 增加分区
+
+    假设需要如下分区：
+
+       + 1GB的xfs文件系统(Linux)
+       + 1GB的vfat文件系统(Windows)
+       + 0.5的swap(Linux swap)
+    
+    开始处理
+    ```
+    gdisk /dev/sda
+    Command （? for help）: p                # 找的最后一个sector的号码
+    Command （? for help）: ?                # 查找分区命令
+    Command （? for help）: n                # 开始新增分区
+    Partition number （4-128, default 4）: 4  # 默认就是 4 号，所以也能 enter 即可！
+    First sector （34-83886046, default = 65026048） or {+-}size{KMGTP}: 65026048  # 也能 enter
+    Last sector （65026048-83886046, default = 83886046） or {+-}size{KMGTP}: +1G  # 决不要 enter
+    # 这个地方可有趣了！我们不需要自己去计算扇区号码，通过 +容量 的这个方式，
+    # 就可以让 gdisk 主动去帮你算出最接近你需要的容量的扇区号码喔！
+    Current type is 'Linux filesystem'
+    Hex code or GUID （L to show codes, Enter = 8300）: # 使用默认值即可～直接 enter 下去！
+    # 这里在让你选择未来这个分区预计使用的文件系统！默认都是 Linux 文件系统的 8300 啰！
+    Command （? for help）: p
+    ```
+
+    重点在"Last Sector"那一行。不要使用那个默认值，那个默认值会把剩余的空间都是用完。只需要1G空间，所以 +1G 就可以。不需要手动计算扇区的数量，命令会根据容量计算最接近的扇区数量。新增之后按下p查看分区情况。最终结果类似如下：
+
+    ```
+    Command （? for help）: p
+    Number  Start （sector）    End （sector）  Size       Code  Name
+       1            2048            6143   2.0 MiB     EF02
+       2            6144         2103295   1024.0 MiB  0700
+       3         2103296        65026047   30.0 GiB    8E00
+       4        65026048        67123199   1024.0 MiB  8300  Linux filesystem
+       5        67123200        69220351   1024.0 MiB  0700  Microsoft basic data
+       6        69220352        70244351   500.0 MiB   8200  Linux swap
+    ```
+
+    基本上都使用默认值即可。然后通过+1G，+500M来创建所需要的分区的容量。然后是文件系统的ID， Linux 大概都是 8200/8300/8e00 等三种格式， Windows 几乎都用 0700 这样。可以按下l显示。现在就可以保存分区信息
+    ```
+    Command （? for help）: w
+
+    Final checks complete. About to write GPT data. THIS WILL OVERWRITE EXISTING
+    PARTITIONS!!
+
+    Do you want to proceed? （Y/N）: y
+    OK; writing new GUID partition table （GPT） to /dev/vda.
+    Warning: The kernel is still using the old partition table.
+    The new table will be used at the next reboot.
+    The operation has completed successfully.
+    # gdisk 会先警告你可能的问题，我们确定分区是对的，这时才按下 y ！不过怎么还有警告？
+    # 这是因为这颗磁盘目前正在使用当中，因此系统无法立即载入新的分区表～
+
+    [[email protected] ~]# cat /proc/partitions
+    major minor  #blocks  name
+
+    252        0   41943040 vda
+    252        1       2048 vda1
+    252        2    1048576 vda2
+    252        3   31461376 vda3
+    253        0   10485760 dm-0
+    253        1    1048576 dm-1
+    253        2    5242880 dm-2
+    # 你可以发现，并没有 vda4, vda5, vda6 喔！因为核心还没有更新！
+    ```
+    系统还在使用中，没有立刻更新分区信息。有两个办法，第一重启机器，不太方便。另一个是使用partprobe命令来处理。
+
+    * `partprobe -s` 命令更新Linux核心的分区表信息。
+   
+    ```
+    partprobe [-s]                  # 不加上s不会出现信息
+
+    /dev/sda: gpt partitions 1 2 3
+    /dev/sdb: gpt partitions 1
+
+    lsblk /dev/sda                  # 实际分区的情况
+
+    cat /proc/partitions            # 核心的分区纪录
+    ```
+
+    * gdisk删除一个分区
+
+    将刚刚新增的那个分区删除掉。
+    ```
+    gdisk /dev/vda
+    Command （? for help）: p
+    Command （? for help）: d
+    Partition number （1-6）: 6
+    Command （? for help）: p
+    # 你会发现 /dev/vda6 不见了！非常棒！没问题就写入吧！
+    Command （? for help）: w
+    # 按照默认下一步操作
+
+    lsblk                          # 还有刚刚新建的分区，需要更新一下核心分区表
+    parprobe -s
+    lsblk                          # 现在就好了
+   
+    ```
+
+    要注意的是不要处理一个正在使用中的分区。如果已经使用了的话，必须先把分区卸载掉。否则直接删除分区的话，磁盘虽然还会写入正确的分区信息，但是核心会无法正确更新分区表信息了。所以不要轻易随便处理掉正在使用中的分区。
+
+    * fdisk
+
+    MBR作为被时代淘汰的工具，可能会有用到的地方。fdisk和gdisk几乎一样，使用命令提示符时gdisk是?，fdisk是m。fdisk有时会使用柱面作为一个最小单位。还有MBR分区是有限制的。
+12. 磁盘的格式化
+    
+    分区之后自然要将文件系统进行格式化了。格式化命令就是 `mkfs` (make filesystem)。这是一个综合的命令，它会调用正确的文件系统格式化工具软件。先介绍xfs系统的 `mkfs.xfs` 。之后会介绍新一代EXT家族成员的 `mkfs.ext4`。
+
+    * xfs文件系统的 `mkfs.xfs`
+
+    一般说**格式化**其实就是指的是**创建文件系统(make filesystem)**。创建的是xfs文件系统，所以使用`mkfs.xfs`。命令使用如下
+    ```
+    mkfs.xfs [-b bsize] [-d parms] [-i parms] [-l parms] [-L label] [-f] [-r parms] 设备名称
+    选项与参数：
+    关於单位：下面只要谈到“数值”时，没有加单位则为 Bytes 值，可以用 k,m,g,t,p （小写）等来解释
+             比较特殊的是 s 这个单位，它指的是 sector 的“个数”喔！
+    -b  ：后面接的是 block 容量，可由 512 到 64k，不过最大容量限制为 Linux 的 4k 喔！
+    -d  ：后面接的是重要的 data section 的相关参数值，主要的值有：
+          agcount=数值  ：设置需要几个储存群组的意思（AG），通常与 CPU 有关
+          agsize=数值   ：每个 AG 设置为多少容量的意思，通常 agcount/agsize 只选一个设置即可
+          file          ：指的是“格式化的设备是个文件而不是个设备”的意思！（例如虚拟磁盘）
+          size=数值     ：data section 的容量，亦即你可以不将全部的设备容量用完的意思
+          su=数值       ：当有 RAID 时，那个 stripe 数值的意思，与下面的 sw 搭配使用
+          sw=数值       ：当有 RAID 时，用于储存数据的磁盘数量（须扣除备份碟与备用碟）
+          sunit=数值    ：与 su 相当，不过单位使用的是“几个 sector（512Bytes大小）”的意思
+          swidth=数值   ：就是 su*sw 的数值，但是以“几个 sector（512Bytes大小）”来设置
+    -f  ：如果设备内已经有文件系统，则需要使用这个 -f 来强制格式化才行！
+    -i  ：与 inode 有较相关的设置，主要的设置值有：
+          size=数值     ：最小是 256Bytes 最大是 2k，一般保留 256 就足够使用了！
+          internal=[0&#124;1]：log 设备是否为内置？默认为 1 内置，如果要用外部设备，使用下面设置
+          logdev=device ：log 设备为后面接的那个设备上头的意思，需设置 internal=0 才可！
+          size=数值     ：指定这块登录区的容量，通常最小得要有 512 个 block，大约 2M 以上才行！
+    -L  ：后面接这个文件系统的标头名称 Label name 的意思！
+    -r  ：指定 realtime section 的相关设置值，常见的有：
+          extsize=数值  ：就是那个重要的 extent 数值，一般不须设置，但有 RAID 时，
+                         最好设置与 swidth 的数值相同较佳！最小为 4K 最大为 1G 。
+
+    举例一：将之前的分出来的分区格式化为xfs文件系统
+    mkfs.xfs /dev/vda4
+    meta-data=/dev/vda4       isize=256    agcount=4, agsize=65536 blks
+             =                sectsz=512   attr=2, projid32bit=1
+             =                crc=0        finobt=0
+    data     =                bsize=4096   blocks=262144, imaxpct=25
+             =                sunit=0      swidth=0 blks
+    naming   =version 2       bsize=4096   ascii-ci=0 ftype=0
+    log      =internal log    bsize=4096   blocks=2560, version=2
+             =                sectsz=512   sunit=0 blks, lazy-count=1
+    realtime =none            extsz=4096   blocks=0, rtextents=0
+
+    # 没有加额外参数配置，格式化很快完毕。比较重要的是Inode和block的数量
+
+    blkid /dev/vda4
+    /dev/vda4: UUID="39293f4f-627b-4dfd-a015-08340537709c" TYPE="xfs"
+    # 确定创建好 xfs 文件系统了！
+    ```
+    使用默认命令就可以创建文件系统。如果想要配置额外的内容才需要加上设置值。例如xfs可以使用多个读写流来读写，可以用agcount和CPU核心数做搭配。假设服务器有一颗4核心的CPU，启用Intel超线程就会仿真出8核心，那么agcount就可以设置为8
+    ```
+    cat 'processor' /proc/cpuinfo
+    processor       : 0
+    processor       : 1
+    # 所以就是有两颗 CPU 的意思，那就来设置设置我们的 xfs 文件系统格式化参数吧！！
+    mkfs.xfs -f -d agcount=2 /dev/vda4
+    # 因为此前格式化过一次，所有使用f参数强制格式化。两核心对应agcount设置为2
+    ```
+    * xfs文件系统for RAID性能优化
+
+    。。。
+    * EXT4文件系统mkfs.ext4
+
+    想要使用ext4格式的文件系统，使用 `mkfs.ext4` 命令。
+    ```
+    mkfs.ext4 [-b size] [-L label] 设备名称
+    -b  ：设置 block 的大小，有 1K, 2K, 4K 的容量，
+    -L  ：后面接这个设备的标头名称。
+
+    举例一：将/dev/vda5格式化为ext4文件系统
+    mkfs.ext4 /dev/vda5
+
+    dumpe2fs -h /dev/vda5
+    # 查看文件系统信息
+    ```
+    * 其他文件系统mkfs
+
+    mkfs是个综合命令，使用`mkfs -t xfs` 类似于`mkfs.xfs`。打出mkfs然后tab就能看到系统支持的文件系统类新。如果想要格式化为VFAT格式。
+    ```
+    mkfs -t vfat /dev/vda5
+    ```
+   
+13. 文件系统检验
+
+    系统运行难免会有各种问题，硬件的软件的。如之前提高的磁盘和内存数据没有同步好。如果文件系统出现错误，该如何挽回。不同文件系统的方式不太一样，现在针对xfs和ext4说明。
+
+    * `xfs_repair` 处理xfs文件系统
+    当有xfs文件系统错乱时会用到这个命令。最好不要用到，但发生问题时又十分重要
+    ```
+    xfs_repair [-fnd] 设备名称
+    选项与参数：
+    -f  ：后面的设备其实是个文件而不是实体设备
+    -n  ：单纯检查并不修改文件系统的任何数据 （检查而已）
+    -d  ：通常用在单人维护模式下面，针对根目录 （/） 进行检查与修复的动作！很危险！不要随便使用
+
+    xfs_repair /dev/vda4
+    Phase 1 - find and verify superblock...
+    Phase 2 - using internal log
+    Phase 3 - for each AG...
+    Phase 4 - check for duplicate blocks...
+    Phase 5 - rebuild AG headers and trees...
+    Phase 6 - check inode connectivity...
+    Phase 7 - verify and correct link counts...
+    done
+    # 共有 7 个重要的检查流程！详细的流程介绍可以 man xfs_repair 即可！
+    
+    [root@mail ~]# xfs_repair /dev/mapper/centos-home 
+    xfs_repair: /dev/mapper/centos-home contains a mounted filesystem
+    xfs_repair: /dev/mapper/centos-home contains a mounted and writable filesystem
+ 
+    fatal error -- couldn't initialize XFS library
+    ```
+
+    xfs_repair可以修复检查文件系统，修复任务过于庞大不能在挂载了的情况下修复，否则出现上面提示的错误。如果可以卸载的话，卸载后再进行修复。linux有个设备不能被卸载，那就是根目录。根目录出问题怎么办，这时进入单人模式或救援模式。加入-d选项，系统强制检验设备，然后重启开机。这是件比较可怕事情...
+
+    * fsck.ext4处理ext4文件系统
+
+    fsck是综合命令，针对ext4的话用fsck.ext4就可以。fsck.ext4有如下的选项
+    ```
+    fsck.ext4 [-pf] [-b superblock] 设备名称
+    选项与参数：
+    -p  ：当文件系统在修复时，若有需要回复 y 的动作时，自动回复 y 来继续进行修复动作。
+    -f  ：强制检查！一般来说，如果 fsck 没有发现任何 unclean 的旗标，不会主动进入
+          细部检查的，如果您想要强制 fsck 进入细部检查，就得加上 -f 旗标啰！
+    -D  ：针对文件系统下的目录进行最优化配置。
+    -b  ：后面接 superblock 的位置！一般来说这个选项用不到。但是如果你的 superblock 因故损毁时，
+          通过这个参数即可利用文件系统内备份的 superblock 来尝试救援。一般来说，superblock 备份在：
+          1K block 放在 8193, 2K block 放在 16384, 4K block 放在 32768
+    ```
+
+    无论是xfx_repair还是fsck.ext4都是用来检查文件系统错误的指令。通常文件系统出现问题在root用户下才能执行的命令。否则在系统正常的情况使用可能会造成大的危害。通常是在文件系统发生极大故障，在linux开机的时候需要进入单人模式下进行维护时，才必须使用此指令。
+14. 文件系统挂载和卸载
+    之前提到过挂载点就是目录，目录是进入磁盘分区（文件系统）的入口。在挂载之前需要确认几件事
+      * 单一文件系统不应该被挂载在不同的目录中
+      * 单一目录应该重复挂载多个文件系统
+      * 作为挂载点的目录，理论上应该是空目录
+
+
+
+
 
 
       
