@@ -1024,6 +1024,307 @@
       * 单一文件系统不应该被挂载在不同的目录中
       * 单一目录应该重复挂载多个文件系统
       * 作为挂载点的目录，理论上应该是空目录
+    
+    尤其是后面两点，当目录不是空的情况下，再挂载文件系统后原来目录下的内容会暂时消失。举例来说，/和/home在同一文件系统下，原来就有/home/test和/home/vbird两个目录。然后加入新的磁盘挂到了/home下，那么现在的/home就显示的是新分区的内容，原来的内容就会被隐藏掉注意不是覆盖。等新分区卸载掉之后原来的目录就又出来了。
+
+    挂载命名 `mount` 内容十分的丰富。介绍一些简单的内容。
+    ```
+    mount -a
+    mount -l
+    mount [-t 文件系统] LABEL='' 挂载点
+    mount [-t 文件系统] UUID='' 挂载点       #推荐使用
+    mount [-t 文件系统] 设备文件名 挂载点
+    选项和参数：
+    -a: 依照配置文件[/etc/fstab]的数据将所有未挂载的磁盘都挂载上了
+    -l: 单纯输入mount命令会显示目前挂载信息，加上-l可增加Label名称
+    -t: 加上文件系统名称种类来指定要挂载的类型。如Linux支持的：xfs, ext3, ext4, reiserfs, vfat, iso9960(光盘格式), nfs, cifs, smbfs(后三种为网络文件系统类型)
+    -n: 在默认情况下，系统会将实际挂载的情况写入/etc/mtab。但在某些情况如单人模式情况下就可以不写入。此时就要用这个参数
+    -o: 后面可以接一些挂载时额外加上的参数！比方说帐号、密码、读写权限等：
+    ```
+
+    CentOS7 下挂载不需要加-t参数，系统会自动使用最恰当的文件系统来挂载设备。这也是`blkid`能正确显示的缘故。CentOS怎么找出文件系统类型呢，几乎所有文件系统都有super block，Linux通过分析superblock搭配Linux自己的驱动程序来测试挂载，如果成功配套那么就会使用那个类型去挂载。系统指定哪些文件系统类型进行这样的测试呢，如下两个：
+       * /etc/filesystems: 系统指定的测试挂载文件系统类型优先顺序
+       * /proc/filesystems: Linux已经载入的文件系统类型
+   
+    Linux把支持文件系统的驱动程序记录在 /lib/modules/$ (uname -r) /kernel/fs/
+
+    过去习惯使用设备名直接挂载，推荐使用设备UUID来识别文件系统，比设备名称和标签可靠，因为UUID是唯一的
+
+    * 挂载 xfs/ext4/vfat 等文件系统
+    ```
+    找出/dev/vda4的UUID，用该UUID挂载文件系统到/data/xfs内
+    blkid /dev/vda4
+    /dev/vda4: UUID="e0a6af55-26e7-4cb7-a515-826a8bd29e90" TYPE="xfs"
+
+    mount UUID="e0a6af55-26e7-4cb7-a515-826a8bd29e90" /data/xfs
+    mount: mount point /data/xfx does not exist!       # 没有创建该目录
+
+    mkdir -p /data/xfs
+    mount UUID="e0a6af55-26e7-4cb7-a515-826a8bd29e90" /data/xfs
+    df /data/xfs
+    Filesystem     1K-blocks  Used Available Use% Mounted on
+    /dev/vda4        1038336 32864   1005472   4% /data/xfs
+
+    ```
+
+    * 挂载CD或DVD光盘
+
+    拿出CentOS原版光盘，放入光驱，测他一测
+    ```
+    将CentOS原版光盘挂载到/data/cdrom下
+    blkid
+    .....（前面省略）.....
+    /dev/sr0: UUID="2015-04-01-00-21-36-00" LABEL="CentOS 7 x86_64" TYPE="iso9660" PTTYPE="dos"
+
+    mkdir /data/cdrom
+    mount /dev/sr0 /data/cdrom
+
+    df /data/cdrom
+    Filesystem     1K-blocks    Used Available Use% Mounted on
+    /dev/sr0         7413478 7413478         0 100% /data/cdrom
+    # 怎么会使用掉 100% 呢？是啊！因为是 DVD 啊！所以无法再写入了啊！
+    ```
+    光驱挂载后不能退出，除非把目录卸载掉。光盘不能写入，所以容量使用直接100%。如果使用的是图形系统，系统还会自动挂到/media，不卸载也可以自动退出。
+
+    * 挂载vfat中文U盘（USB磁盘）
+
+    拿出你的U盘查到Linux的USB接口上，注意U盘不能是NTFS文件系统。测他一测
+    ```
+    blkid
+    /dev/sda1: UUID="35BC-6D6B" TYPE="vfat"
+
+    mkdir /data/usb
+    mount -o codepage=950, ioscharset=utf8 UUID="35BC-6D6B" /data/usb
+    df /data/usb
+    Filesystem     1K-blocks  Used Available Use% Mounted on
+    /dev/sda1        2092344     4   2092340   1% /data/usb
+    ```
+    如果有中文文件名的数据，可以在挂载时指定下文件系统所使用的语系。在`man mount`中查找vfat可以使用pagecode处理，中文是950。再指定utf8编码格式。如果U盘是NTFS格式，就需要安装NTFS文件系统的驱动程序，默认是没有的。
+
+    * 重新挂载目录和挂载不特定目录
+
+    整个目录树最重要的就是根目录了，根目录不能被卸载。如果挂载参数更改，或者出现只读情况时，如何重新挂载。可以reboot也可以这样 `mount -o remount, rw, auto /`
+
+    也可以利用mount将某个目录挂载到另一个目录下。不是挂载文件系统而是而外挂载一个目录。和symbolic link一样的作用，但是在某些不支持符号链接的情况下，只能用挂载目录方式
+    ```
+    将/var挂载到/data/var
+    mkdir /data/var
+    mount --bind /var /data/var
+    ls -bid /var /data/var
+    ```
+    观察链接两个目录链接到同一个目录，mount --bind 可以将目录挂载到另一个目录，而不是整个文件系统。所以进入/data/var就是进入/var
+
+    * unmount(卸载文件系统)
+
+    ```
+    umount [-fn] 文件设备名或挂载点
+    选项与参数：
+    -f  ：强制卸载！可用在类似网络文件系统 （NFS） 无法读取到的情况下；
+    -l  ：立刻卸载文件系统，比 -f 还强！
+    -n  ：不更新 /etc/mtab 情况下卸载。
+    ```
+    卸载之后查看df或mount是否还在目录树中。可以按照设备名或者挂载点卸载。卸载之后可以推出光盘U盘了。如果恰好在要卸载的目录中时，也会卸载失败，退出到根目录再卸载就OK了。
+15. 磁盘/文件系统参数修订
+
+    某些时刻，想要修改文件系统的某些参数，比如Label Name或者journal相关参数等。需要下面相关命令
+
+    * mknod
+
+    之前说在Linux所有设备都用文件来代替，那么文件时如何代表设备的，就是通过文件的major和minor数值。所以major和minor拥有特殊意义不能随意修改。如查看/dev/sda下的设备
+    ```
+    ll /dev/sda*
+    brw-rw---- 1 root disk 8, 0 Jan 20 19:57 /dev/sda
+    brw-rw---- 1 root disk 8, 1 Jan 20 19:57 /dev/sda1
+    brw-rw---- 1 root disk 8, 2 Jan 20 19:57 /dev/sda2
+    brw-rw---- 1 root disk 8, 3 Jan 20 19:57 /dev/sda3
+    ```
+    结果中的9是主要设备代码(Major)，0123是次要设备代码(Minor)。Linux核心就是根据这两个数字认识设备的，举例常见的设备代码如下：</br>
+    |磁盘文件名|Major|Minor|
+    |:----:|:----:|:----:|
+    |/dev/sda|8|0-15|
+    |/dev/sdb|8|16-31|
+    |/dev/loop0|7|0|
+    |/dev/loop1|7|1|
+    想了解更多核心支持的硬件设备代码，请查看[官网](https://www.kernel.org/doc/Documentation/)。基本上，核心2.6之后硬件文件名系统自动实时产生。我们不需要手动创建设备文件，不过有时候需要手动处理。例如某些服务关到特定目录下(chroot)时。
+    ```
+    mknod 设备文件名 [bcp] [Major] [Minor]
+    选项与参数：
+    设备种类：
+       b  ：设置设备名称成为一个周边储存设备文件，例如磁盘等；
+       c  ：设置设备名称成为一个周边输入设备文件，例如鼠标/键盘等；
+       p  ：设置设备名称成为一个 FIFO 文件；
+    Major ：主要设备代码；
+    Minor ：次要设备代码；
+
+    范例：由上述的介绍我们知道 /dev/vda10 设备代码 252, 10，请创建并查阅此设备
+    [root@study ~]# mknod /dev/vda10 b 252 10
+    [root@study ~]# ll /dev/vda10
+    brw-r--r--. 1 root root 252, 10 Jun 24 23:40 /dev/vda10
+    # 上面那个 252 与 10 是有意义的，不要随意设置啊！
+
+    范例：创建一个 FIFO 文件，文件名为 /tmp/testpipe
+    [root@study ~]# mknod /tmp/testpipe p
+    [root@study ~]# ll /tmp/testpipe
+    prw-r--r--. 1 root root 0 Jun 24 23:44 /tmp/testpipe
+    # 注意啊！这个文件可不是一般文件，不可以随便就放在这里！
+    # 测试完毕之后请删除这个文件吧！看一下这个文件的类型！是 p 喔！^_^
+
+    rm /dev/vda10 /tmp/testpipe
+    rm: remove block special file '/dev/vda10' ? y
+    rm: remove fifo '/tmp/testpipe' ? y
+    ```
+
+    * xfs_admin 修改 XFS 文件系统的 UUID 与 Label name
+    如果你当初格式化的时候忘记加上标头名称，后来想要再次加入时，不需要重复格式化！直接使用这个 xfs_admin 即可。 这个指令直接拿来处理 LABEL name 以及 UUID 即可
+
+    ```
+    [root@study ~]# xfs_admin [-lu] [-L label] [-U uuid] 设备文件名
+    选项与参数：
+    -l  ：列出这个设备的 label name
+    -u  ：列出这个设备的 UUID
+    -L  ：设置这个设备的 Label name
+    -U  ：设置这个设备的 UUID 
+
+    设置 /dev/vda4 的 label name 为 vbird_xfs，并测试挂载
+    xfs_admin -L vbird_xfs /dev/vda4
+    writing all SBs
+    new label = "vbird_xfs"                 # 产生新的 LABEL 名称啰！
+    xfs_admin -l /dev/vda4
+
+    uuidgen
+    ```
+
+    * tune2fs 修改 ext4 的 label name 与 UUID
+    ```
+    tune2fs [-l] [-L Label] [-U uuid] 设备文件名
+    选项与参数：
+    -l  ：类似 dumpe2fs -h 的功能～将 superblock 内的数据读出来～
+    -L  ：修改 LABEL name
+    -U  ：修改 UUID 
+    ```
+16. 设置开机挂载
+   
+    手动mount的内容，开机时就会卸载掉。每次手动处理不方便，所以需要每次开机时自动挂载。
+
+    * 开机挂载/etc/fstab和/etc/mtab
+    
+    自动设置到/etc/fstab中进行设置，但是系统挂载有一些限制。
+
+       + 根目录/是必须挂载的，而且必须先于其他挂载点挂载起来
+       + 其他挂载点必须是已经创建好的目录，可以任意指定，但是要遵循系统目录架构原则(FHS)
+       + 所有挂载点在同一时间只能挂载一次
+       + 要是进行卸载，必须将当前目录移到要卸载的目录外
+    看下/etc/fstab中的内容
+    ```
+    [[email protected] ~]# cat /etc/fstab
+    # Device                              Mount point  filesystem parameters    dump fsck
+    /dev/mapper/centos-root                   /       xfs     defaults            0 0
+    UUID=94ac5f77-cb8a-495e-a65b-2ef7442b837c /boot   xfs     defaults            0 0
+    /dev/mapper/centos-home                   /home   xfs     defaults            0 0
+    /dev/mapper/centos-swap                   swap    swap    defaults            0 0
+    ```
+    /etc/fstab(filesystem table)就是将mount时所用的参数写到的文件。此外还有dump字段用作备份，还有fsck字段用在开机是否进行文件系统校验。文件共6个字段，了解下。
+    ```
+    [设备/UUID等] [挂载点] [文件系统类型] [文件系统参数] [dump] [fsck]
+    ```
+    * 第一列：磁盘设备文件名/UUID/Lable Name。这一列可以填的就是三个项目。文件系统或磁盘设备名如/dev/sda2，UUID名称UUID=xx，Lable名称LABEL=xx。一般使用UUID是更好的选择
+    * 第二列：挂载点(mount point)。挂载的目录
+    * 第三列：磁盘分区的文件系统。手动挂载时可以自动获取类型，在这个文件里需要手动指定
+    * 第四列：文件系统参数
+    
+      之前就使用过参数指定文件系统的文件名语言编码。
+      |参数|参数解释|
+      |:----|:----|
+      |async/sync 非同步/同步|设置磁盘是否以非同步方式运行！默认为 async（性能较佳）|
+      |auto/noauto 自动/非自动|当下达 mount -a 时，此文件系统是否会被主动测试挂载。默认为 auto。|
+      |rw/ro 可读写/只读|让该分区以可读写或者是只读的型态挂载上来，如果你想要分享的数据是不给使用者随意变更的， 这里也能够设置为只读。则不论在此文件系统的文件是否设置 w 权限，都无法写入|
+      |exec/noexec 可执行/不可执行|限制在此文件系统内是否可以进行“执行”的工作？如果是纯粹用来储存数据的目录， 那么可以设置为 noexec 会比较安全。不过，这个参数也不能随便使用，因为你不知道该目录下是否默认会有可执行文件。举例来说，如果你将 noexec 设置在 /var ，当某些软件将一些可执行文件放置于 /var 下时，那就会产生很大的问题喔！ 因此，建议这个 noexec 最多仅设置于你自订或分享的一般数据目录。|
+      |user/nouser 允许/不允许使用者挂载|是否允许使用者使用 mount指令来挂载呢？一般而言，我们当然不希望一般身份的 user 能使用 mount 啰，因为太不安全了，因此这里应该要设置为 nouser 啰！|
+      |suid/nosuid 具有/不具有 suid 权限|该文件系统是否允许 SUID 的存在？如果不是可执行文件放置目录，也可以设置为 nosuid 来取消这个功能！|
+      |defaults|同时具有 rw, suid, dev, exec, auto, nouser, async 等参数。 基本上，默认情况使用 defaults 设置即可！|
+
+    * 第五列：能否被dump备份命令作用。dump是一个备份的指令，现在有很多代替方案，置为0即可。
+    * 第六列：fsck检查文件系统标志。该字段不适用于xfs文件系统，置为0即可。
+
+    查看我们的新建的文件系统能否开机自动挂载。先`df`看是否挂载，如果挂载了的话，给他卸载掉。然后将要挂载的信息写入/etc/fstab。然后`mount -a`，再看`df`是否挂载了。再reboot看开机是否自动挂载。/etc/fstab是开机挂载的配置文件，实际文件系统挂载是记录到/etc/mtab和/proc/mounts中的。每次挂载时也会更新这两个文件。如果/etc/fstab录入有错，导致无法顺利开机而进入单人维护模式时，根目录是只读的无法修改/etc/fstab怎么办。可以使用这个命令：
+    ```
+    mount -n -o remount,rw /
+    ```
+    * 特殊设备loop挂载（镜像文件不用烧录就挂载使用）
+    
+    如果有光盘镜像文件或者文件作为磁盘的方式时，需要用特殊方法挂载不需要烧录。
+
+    * 挂载光盘/DVD镜像文件
+    
+    创建一个空目录/data/centos_dvd，使用命令`mount -o loog xxx.iso /data/centos_dvd`。就把镜像文件挂载到目录上了，然后可以使用目录中的内容。iso有被做修改的可能，所以一般会有MD5校验的过程，有必要的话。
+
+    * 创建大文件以制作loop设备文件
+    
+    既然可以挂在DVD镜像文件，那么可否制作一个大文件然后将大文件格式化后挂载呢。这个有大用，比如给根目录分了一个巨大的空间没有额外空间进行其他的分区操作。就可以制作一个大文件，然后把大文件挂载，如此就会觉得多了一个分区。
+
+    测试在大空间分区(/home)内创建一个512M的大文件。然后把这个大文件挂载。
+
+    * 创建大文件
+    
+    使用`dd`命令创建空的文件。详情见下章压缩命令和应用，此处做简单介绍。先创建一个空的大文件/home/loopTest/loopDev
+    ```
+    [root@mail loopTest]# dd if=/dev/zero of=/srv/loopdev bs=1M count=512
+    512+0 records in
+    512+0 records out
+    536870912 bytes (537 MB) copied, 0.368939 s, 1.5 GB/s
+    # 这个指令的简单意义如下：
+    # if    是 input file ，输入文件。那个 /dev/zero 是会一直输出 0 的设备！
+    # of    是 output file ，将一堆零写入到后面接的文件中。
+    # bs    是每个 block 大小，就像文件系统那样的 block 意义；
+    # count 则是总共几个 bs 的意思。所以 bs*count 就是这个文件的容量了！
+    [root@mail loopTest]# ll -h
+      total 512M
+    -rw-r--r-- 1 root root 512M Jan 25 16:31 loopDev
+    ```
+    dd将512个1M文件堆起来就是一个512M的文件。
+
+    * 大文件的格式化
+    
+    默认xfs不能格式化文件，需要加一些参数才可以。
+    ```
+    mkfs.xfs -f /srv/loopdev
+    blkid /srv/loopdev
+    /srv/loopdev: UUID="5109015f-dab1-43a8-b548-a4c0006f5e20" TYPE="xfs"
+    ```
+
+    * 挂载
+    使用mount 和特殊参数进行挂载
+    ```
+    mkdir -p /mnt
+    mount -o loop UUID="5109015f-dab1-43a8-b548-a4c0006f5e20" /mnt
+    ```
+    这样就挂载上了。这样在原本的分区上环境制作一个分区，十分好用。CentOS比较智能，即使不加参数也能识别文件挂载，为了向下兼容也可以加上参数。现在把这个文件系统配置好开机挂载
+    ```
+    umount /mnt
+    vim /etc/fstab
+    /srv/loopdev  /data/file  xfs  defaults**,loop**   0 0
+    mount -a
+    [root@VM-4-15-centos srv]# df -hT /data/file/
+    Filesystem     Type  Size  Used Avail Use% Mounted on
+    /dev/loop0     ext4  488M  780K  452M   1% /data/file
+
+    # 因为测试机是ext4文件系统，所以采用ext4，区别有两点
+    # 格式化时不加-f参数
+    # /etc/fstab 里的参数是defaults
+    ```
+17. 内存交换(swap)空间创建
+    
+    
+
+
+
+
+
+    
+
+
+
+   
 
 
 
