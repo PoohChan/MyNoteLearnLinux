@@ -1314,7 +1314,151 @@
     ```
 17. 内存交换(swap)空间创建
     
+    以前内存不够的时候，一个暂时将内存的程序放到硬盘的内存交换空间是十分重要的。为了避免内存耗尽引起问题的解决办法。以前安装linux时一般必有的两个分区一个是根目录一个是swap。
+
+    一般来说内存够用的话，swap是不会被用到的，被用到那就是内存不够了。内存不够时内存中暂时不用的程序和数据被移到swap中给需要的程序腾出空间。swap是在磁盘上，当swap被用到时磁盘灯就开始闪个不停了。
+
+    现在内存可能都会够，但是还是最好预留些swap来做缓冲。
+
+    * 使用实体分区创建swap
     
+    创建swap分区非常简单，按照以下步骤：
+       
+       1. 分区：先使用gdisk从磁盘中分一个分区给swap。
+       2. 格式化：利用swap格式的 `mkswap 设备文件名` 就能格式化该分区成为swap格式
+       3. 使用：将该swap设备启动，命令：`swapon 设备文件名`
+       4. 观察：最终通过`free`和`swapon -s`来观察内存
+    
+    * 1.分区
+    ```
+    gdisk /dev/vda
+
+    [[email protected] ~]# gdisk /dev/vda
+    Command （? for help）: n
+    Partition number （6-128, default 6）:
+    First sector （34-83886046, default = 69220352） or {+-}size{KMGTP}:
+    Last sector （69220352-83886046, default = 83886046） or {+-}size{KMGTP}: +512M
+    Current type is 'Linux filesystem'
+    Hex code or GUID （L to show codes, Enter = 8300）: 8200
+    Changed type of partition to 'Linux swap'
+ 
+    Command （? for help）: p
+    Number  Start （sector）    End （sector）  Size       Code  Name
+       6        69220352        70268927   512.0 MiB   8200  Linux swap  # 重点就是产生这东西！
+
+    Command （? for help）: w
+ 
+    Do you want to proceed? （Y/N）: y
+ 
+    [[email protected] ~]# partprobe
+    [[email protected] ~]# lsblk
+    NAME            MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+    vda             252:0    0   40G  0 disk
+    .....（中间省略）.....
+    `-vda6          252:6    0  512M  0 part   # 确定这里是存在的才行！
+   
+    ```
+    * 2.创建swap格式
+    ```
+    mkswap /dev/vda6
+    Setting up swapspace version 1, size = 524284 KiB
+    no label, UUID=6b17e4ab-9bf9-43d6-88a0-73ab47855f9d
+
+    [[email protected] ~]# blkid /dev/vda6
+    /dev/vda6: UUID="6b17e4ab-9bf9-43d6-88a0-73ab47855f9d" TYPE="swap"
+    # 确定格式化成功！且使用 blkid 确实可以抓到这个设备了喔！
+    ```
+    * 3.观察载入查看
+    ```
+    free
+                  total        used        free      shared  buff/cache   available
+    Mem:        1275140      227244      330124        7804      717772      875536  # 实体内存
+    Swap:       1048572      101340      947232                                      # swap 相关
+    # 我有 1275140K 的实体内存，使用 227244K 剩余 330124K ，使用掉的内存有
+    # 717772K 用在缓冲/高速缓存的用途中。至于 swap 已经有 1048572K 啰！这样会看了吧？！
+
+    [[email protected] ~]# swapon /dev/vda6
+    [[email protected] ~]# free
+                total        used        free      shared  buff/cache   available
+    Mem:        1275140      227940      329256        7804      717944      874752
+    Swap:       1572856      101260     1471596   &lt;==有看到增加了没？
+
+    [[email protected] ~]# swapon -s
+    Filename                 Type            Size    Used    Priority
+    /dev/dm-1                partition       1048572 101260  -1
+    /dev/vda6                partition       524284  0       -2
+    # 上面列出目前使用的 swap 设备有哪些的意思！
+ 
+    [[email protected] ~]# nano /etc/fstab
+    UUID="6b17e4ab-9bf9-43d6-88a0-73ab47855f9d"  swap  swap  defaults  0  0
+    # 当然要写入配置文件，只不过不是文件系统，所以没有挂载点！第二个字段写入 swap 即可。
+    ```
+
+    * 使用文件创建swap
+   
+    如果没有实体分区，现在就可以使用前一节的创建文件分区的方法。现在就创建一个128M的内存交换空间
+
+       1. 使用dd命令在/tmp下增加一个128M的文件
+       ```
+       [root@VM-4-15-centos ~]# dd if=/dev/zero of=/tmp/swap bs=1M count=128
+       128+0 records in
+       128+0 records out
+       134217728 bytes (134 MB, 128 MiB) copied, 0.0933353 s, 1.4 GB/s
+
+       [root@VM-4-15-centos ~]# ll -h /tmp/swap
+       -rw-r--r-- 1 root root 128M Jan 27 10:18 /tmp/swap
+       ```
+       2. 使用mkswap将/tmp/swap文件格式化为swap的文件格式
+       ```
+       [root@VM-4-15-centos ~]# mkswap /tmp/swap
+       mkswap: /tmp/swap: insecure permissions 0644, 0600 suggested.
+       Setting up swapspace version 1, size = 128 MiB (134213632 bytes)
+       no label, UUID=a88ae7ba-1622-41b8-838e-df6e68c8b901
+       ```
+       3. 使用swapon启动/tmp/swap
+       ```
+       [root@VM-4-15-centos ~]# swapon /tmp/swap
+       swapon: /tmp/swap: insecure permissions 0644, 0600 suggested.
+       [root@VM-4-15-centos ~]# swapon -s
+       Filename                                Type            Size    Used    Priority
+       /tmp/swap                               file            131068  0       -2
+       ```
+       4. 使用swapoff关闭swap file, 设置自动启动
+       ```
+       vim /etc/fstab
+       /tmp/swap  swap  swap  defaults  0  0
+       # 为何这里不要使用 UUID 呢？这是因为系统仅会查询区块设备 （block device） 不会查询文件！
+       # 所以，这里千万不要使用 UUID，不然系统会查不到喔！
+
+       swapoff /tmp/swap
+       swapon -s
+       # 确定已经回复到原本的状态了！然后准备来测试！！
+       swapon -a
+       swapon -s
+       又看到swap空间了，设置/etc/fstab完毕
+       ```
+    一般桌面系统都用不到，一般linux也用不到。但是对于服务器和工作站这种提供长时服务的系统来说，swap还是需要创建的。如果机器支持休眠模式，休眠时运行程序的状态就会放到swap中。另外有些程序在运行时就会利用swap的特性向swap中放入数据。swap是需要创建的，只不过不需要很大。
+
+18. 文件系统的特殊观察和操作
+    * 磁盘空间浪费问题
+    一个block只能存放一个文件，所以小文件的存在就是浪费。文件系统中的super block和inode table等中介数据等也是浪费磁盘的存在，所以创建出文件系统后很多容量就被用掉了。
+
+    在输入`ll -sh`第一行显示total字样。就是目录下用掉的block的容量。
+    ```
+    [root@mail ipTest]# ll -sh
+    total 12K
+    4.0K -rw-r--r-- 1 root root 350 Apr 22  2021 Main2.java
+    4.0K -rw-r--r-- 1 root root 832 Apr 22  2021 Main.class
+    4.0K -rw-r--r-- 1 root root 350 Jan 14 10:01 Main.java
+    ```
+    三个文件加起来不到2K，但是使用了12K的block存储。
+
+    * 利用GNU的parted进行分区
+19. 重点回顾
+    
+
+
+       
 
 
 
