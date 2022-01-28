@@ -252,6 +252,90 @@ tar -jxv -f /root/etc.tar.bz2 etc/shadow
 ```
 
 
-* 打包目录，但是不包含目录下几个文件的做法
+* 打包目录，但是不包含目录下几个特定文件的做法
 
+使用 --exclude=参数进行排除。假设要打包/root /etc两个文件夹放到/root/system.tar.bz2。因为这个的打包文件在/root下所以要排除自己。然后排除/root/etc*，这是之前压缩打包过的文件。命令如下：
+```
+tar -jxv -f /root/system.tar.bz2 --exclude=/root/etc* \
+> --exclude=/root/system.tar.bz2 /root /etc
+```
+该命令分为两行输入，在打出反斜杠\后输入回车可以在第二行接着输入命令，第二行会自动补一个大于号。
 
+* 备份比某时刻还要新的文件
+
+只想备份新的文件而不想备份旧的，此时使用--newer-mtime这个选项。这是两个结合起来的，一个是--newer和-mtime。使用--newer时，表示后续日期包含mtime和ctime。而--newer-mtime则只是包含--mtime。尝试一下
+```
+1. 先用find在/etc下找到比/etc/passwd还新的文件
+find /etc -newer /etc/passwd
+...
+# 找到比/etc/passwd更新的文件
+
+ll /etc/passwd
+-rw-r--r-- 1 root root 1682 Jan 10 17:07 /etc/passwd
+# 2022/01/10
+
+2. 使用tar打包压缩
+tar -jcv -f /root/etc.newer.than.passwd.tar.bz2 \
+> --newer-mtime = "2022/01/10" /etc/*
+tar: Option --newer-mtime: Treating date '2022/01/10' as 2022-01-10 00:00:00
+tar: Removing leading `/' from member names
+/etc/acpi/
+/etc/acpi/events/
+tar: /etc/acpi/events/powerconf: file is unchanged; not dumped
+tar: /etc/acpi/events/videoconf: file is unchanged; not dumped
+...
+# 比较没有变化的就不备份(not dumped)
+
+3. 显示出文件
+tar -jtv -f /root/etc.newer.than.passwd.tar.bz2 | grep -v '/$' 
+```
+这样可以进行差异化备份，备份时可以不用备份那些之前备份过没有变化的文件
+
+* tarfile, tarball?
+  
+tar打包后压缩不压缩会有名称上的差异，如果只是打包`tar -cv -f filename.tar`这个打包文件称为tarfile。如果压缩了`tar -jcv -f filename.tar.bz2`这个打包压缩文件被称为tarball（tar球？）。很多书籍上会这么称呼。
+
+（optional, 鸟哥讲了一个磁带机的例子。磁带机是一次性写入设备，不能使用cp命令复制。如果想备份/root /etc等到磁带机中，使用打包命令生成到磁带机中）
+
+* 特殊应用：利用管道符和数据流
+
+tar使用中，有种特殊方式。那就是通过标准输入输出流重导向(standard input/standard output)，和管道符(pipe)将文件一边打包一边解压缩到目标目录。关于数据流重导向和管道符在bash章会说，先看命令
+```
+1. 将/etc一边打包一边在/tmp中解开
+cd /tmp
+tar -cv -f - /etc | tar -xv -f -
+# 这个动作看起来是单纯复制，但是是有用的。
+# 注意打包的目标文件变成-，然后解压的原文件也是-，和一个管道符 |
+# 这分别代表standard input, standard output和pipeline
+# 简单理解可以把-理解成内存中的一个设备，一个缓冲区
+# 详情使用见bash章
+```
+
+* 例题：系统备份范例
+
+系统上有许多重要目录需要备份。不建议把备份文件放到/root下。假设已知有如下几个重要目录
++ /etc/（配置文件）
++ /home/（使用者的主文件夹）
++ /var/spool/mail/（系统中所有邮箱）
++ /var/spool/cron/（所有账号的定时任务配置文件）
++ /root/（root用户的主文件夹）
+
+已知/home/loop*不需要备份。/root下的压缩文件不需要备份。将备份文件放到/backups下，该目录只有root可以进入。每次备份文件名不同，使用日期做区别，如bakup-system-2022-01-28.tar.bz2这样的文件名。
+```
+mkdir /backups
+chmod 700 /backups
+ll -d /backups
+tar -jcv -f /backups/backup-system-2022-01-28.tar.bz2 \
+> --exclude=/root/*.bz2 --exclude=/root/*.gz --exclude=/home/loop* \
+> /etc /home /var/spool/mail /var/spool/cron /root
+
+ll -h /backups
+```
+
+* 解压缩后SELinux的问题
+
+将备份的系统配置文件复原时，会涉及到SELinux的权限问题。在第一次复原系统后，不要立即重新开机！先使用 restorecon -Rv /etc 自动修复一下 SELinux 的类型。关于SELinux的详细内容之后介绍
+
+### 四、xfs文件系统的备份和还原
+### 五、光盘写入工具
+### 六、其他常见压缩和备份工具
