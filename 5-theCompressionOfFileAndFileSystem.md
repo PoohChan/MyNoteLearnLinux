@@ -337,5 +337,11 @@ ll -h /backups
 将备份的系统配置文件复原时，会涉及到SELinux的权限问题。在第一次复原系统后，不要立即重新开机！先使用 restorecon -Rv /etc 自动修复一下 SELinux 的类型。关于SELinux的详细内容之后介绍
 
 ### 四、xfs文件系统的备份和还原
+1. XFS文件系统备份`xfsdump`
+2. XFS文件系统还原`xfsrestore`
 ### 五、光盘写入工具
+1. `mkisofs` 创建镜像文件
+2. `cdrecord` 光盘烧录工具
 ### 六、其他常见压缩和备份工具
+1. `dd` 命令
+2. `cpio` 命令
