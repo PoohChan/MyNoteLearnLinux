@@ -14,9 +14,69 @@
 tab补全是在bash才有的功能。命令第一个单词是命令补全，第二个是文件名补全。
 
 * 命令别名设置(alias)
+  
+简化一个长命令，赋予一个别名。如`alias lm='ls -al|more'`。如果想要知道现在有哪些别名输入`alias`。取消一个别名`unalias lm`。
 
 * 工作控制，前台后台控制(job control, foreground, background)
 
 * 程序脚本(shell scripts)
 
+* 查询命令是否是bash内置命令：type
+
+使用`man bash`可以看到bash的说明文档，内容十分多。里面可以看到`cd`命令，这是因为bash内置了很多命令，这是其中之一。使用type可以知道一个命令是否是bash内置的命令。
+```
+type [-tpa] name
+不加参数，会直接显示出是不是内置命令
+-t  ：当加入 -t 参数时，type 会将 name 以下面这些字眼显示出他的意义：
+      file    ：表示为外部指令；
+      alias   ：表示该指令为命令别名所设置的名称；
+      builtin ：表示该指令为 bash 内置的指令功能；
+-p  ：如果后面接的 name 为外部指令时，才会显示完整文件名；
+-a  ：会由 PATH 变量定义的路径中，将所有含 name 的指令都列出来，包含 alias
+
+举例一：type ls
+[root@ ~]# type ls
+ls is aliased to `ls --color=auto'
+[root@ ~]# type -a ls
+ls is aliased to `ls --color=auto'
+ls is /usr/bin/ls
+ls is /bin/ls
+[root@ ~]# type -t ls
+alias
+
+举例二：type cd
+[root@  ~]# type cd
+cd is a shell builtin
+```
+
+* 命令下达和快速编辑
+
+如果命令太长一行写不下，可以使用反斜杠\进行跳脱，回车后在第二行出现大于号然后继续写命令。
+
+快捷键快速编辑命令
+|组合键|功能|
+|:---|:---|
+|ctrl+u, ctrl+k|前者是将光标前的命令删掉，后者是将光标后的命令删掉|
+|ctrl+a, ctrl+e|前者是将光标移动到命令最前面，后者是将光标移动到命令最后面|
+
+顺利在终端(tty)登录后，Linux就会根据/etc/passwd的设置给我们一个shell（通常是bash)，然后就可以操作shell了。
+
+### 三、Bash的操作环境
+
+1. 路径和命令指定顺序
+
+如果命令下达，那么到底是哪个命令被执行了。命令的运行顺序按照如下排序：
+
+* 以绝对或相对路径执行命令，如 `/bin/ls` 或 `./ls`
+* 由别名(alias)找到命令执行
+* 由bash内置的命令
+* 通过$PATH这个变量的顺序找到的第一个命令
+
+举例来说，执行`/bin/ls`结果没有颜色，而`ls`结果是有颜色的。因为前者是直接命令的下达，而后者是`ls --color=auto`的别名。执行`type -a ls`可以看执行顺序。
+
+2. bash进入欢迎信息，/etc/issue, /etc/motd
+
+结合使用进入终端显示一些信息
+
+3. bash的环境配置文件
 
